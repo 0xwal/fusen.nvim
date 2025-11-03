@@ -99,9 +99,11 @@ function M.setup(opts)
     return
   end
 
-  config.setup(opts)
+  local cfg = config.setup(opts)
 
-  ui.setup_signs()
+  if cfg.mark.enable then
+    ui.setup_signs()
+  end
 
   storage.load()
 

@@ -4,6 +4,7 @@ M.defaults = {
   save_file = vim.fn.expand("$HOME") .. "/fusen_marks.json",
 
   mark = {
+		enable = true,
     icon = "📝",
     hl_group = "FusenMark",
   },

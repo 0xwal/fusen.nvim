@@ -183,12 +183,14 @@ function M.refresh_buffer(bufnr)
   local config = require("fusen.config").get()
 
   for _, mark in ipairs(file_marks) do
-    local sign_id = mark.line * 1000 + (mark.created_at or 0) % 1000
 
-    vim.fn.sign_place(sign_id, sign_group, "FusenSign", bufnr, {
-      lnum = mark.line,
-      priority = config.sign_priority,
-    })
+    if config.mark.enable then
+      local sign_id = mark.line * 1000 + (mark.created_at or 0) % 1000
+      vim.fn.sign_place(sign_id, sign_group, "FusenSign", bufnr, {
+        lnum = mark.line,
+        priority = config.sign_priority,
+      })
+    end
 
     -- Handle virtual text based on mode
     if mark.annotation and mark.annotation ~= "" then
@@ -218,7 +220,10 @@ function M.clear_buffer(bufnr)
     return
   end
 
-  vim.fn.sign_unplace(sign_group, { buffer = bufnr })
+  local config = require("fusen.config").get()
+  if config.mark.enable then
+    vim.fn.sign_unplace(sign_group, { buffer = bufnr })
+  end
   vim.api.nvim_buf_clear_namespace(bufnr, namespace, 0, -1)
 end
 
