@@ -27,6 +27,7 @@ Key features:
 - Telescope integration for searching
 - Fast navigation between bookmarks
 - Quickfix list support
+- Yank marks to clipboard with customizable templates
 
 ==============================================================================
 INSTALLATION                                                   *fusen-install*
@@ -34,9 +35,9 @@ INSTALLATION                                                   *fusen-install*
 Using lazy.nvim: >lua
     {
       "walkersumida/fusen.nvim",
-      config = function()
-        require("fusen").setup()
-      end
+      version = "*",
+      event = "VimEnter",
+      opts = {},
     }
 <
 
@@ -47,6 +48,10 @@ Using packer.nvim: >lua
         require("fusen").setup()
       end
     }
+
+
+Using vim-plug:
+    Plug "walkersumida/fusen.nvim"
 <
 
 ==============================================================================
@@ -60,7 +65,7 @@ Setup function: >lua
 
 Default configuration: >lua
     {
-      save_file = vim.fn.stdpath("data") .. "/fusen_marks.json",
+      save_file = vim.fn.expand("$HOME") .. "/fusen_marks.json",
       
       mark = {
         icon = "📝",
@@ -68,14 +73,26 @@ Default configuration: >lua
       },
       
       keymaps = {
-        toggle_mark = "fm",
         add_mark = "me",
         clear_mark = "mc",
+        toggle_mark = "mt",
         clear_buffer = "mC",
         clear_all = "mD",
         next_mark = "mn",
         prev_mark = "mp",
         list_marks = "ml",
+        yank_line = "my",
+        yank_buffer = "mY",
+        yank_all = "mA",
+      },
+
+      yank = {
+        template = '- @{path}:L{line} - "{annotation}"',
+        template_no_annotation = "- @{path}:L{line}",
+      },
+
+      toggle_mark = {
+        skip_confirm = false,
       },
       
       telescope = {
@@ -89,21 +106,31 @@ Default configuration: >lua
       
       annotation_display = {
         mode = "float", -- "eol", "float", "both", "none"
-        
+        spacing = 2,    -- Number of spaces before annotation in eol mode
+
         float = {
-          delay = 500,
+          delay = 100,
           border = "rounded",
           max_width = 50,
           max_height = 10,
         },
       },
+
+      -- Exclude specific filetypes from keymaps
+      exclude_filetypes = {
+        -- "neo-tree",     -- Example: neo-tree
+        -- "NvimTree",     -- Example: nvim-tree
+        -- "nerdtree",     -- Example: NERDTree
+      },
+
+      enabled = true,
     }
 <
 
 Configuration options:
 
 `save_file`                                                 *fusen-opt-save_file*
-    Path where marks are saved. Default: stdpath("data") .. "/fusen_marks.json"
+    Path where marks are saved. Default: $HOME/fusen_marks.json
 
 `mark`                                                           *fusen-opt-mark*
     Table defining mark appearance with icon, sign text, and highlight group.
@@ -124,20 +151,56 @@ Configuration options:
 
 `annotation_display`                                *fusen-opt-annotation_display*
     Settings for annotation display.
-    
+
     `mode`                                          *fusen-opt-annotation_display-mode*
         Display mode for annotations:
         - "eol": Show at end of line
         - "float": Show in floating window on hover
         - "both": Show both eol and float
         - "none": Hide annotations
-    
+
+    `spacing`                                       *fusen-opt-annotation_display-spacing*
+        Number of spaces before annotation in eol mode. Default: 2
+
     `float`                                         *fusen-opt-annotation_display-float*
         Floating window settings:
-        - delay: Time before showing float (ms)
+        - delay: Time before showing float (ms). Default: 100
         - border: Border style
         - max_width: Maximum window width
         - max_height: Maximum window height
+
+`exclude_filetypes`                                 *fusen-opt-exclude_filetypes*
+    List of filetypes to exclude from keymaps. Useful for file explorers and
+    special buffers where you don't want Fusen keymaps to be active.
+    Examples: "neo-tree", "NvimTree", "nerdtree"
+
+`yank`                                                           *fusen-opt-yank*
+    Settings for yanking marks to the clipboard.
+
+    `template`                                          *fusen-opt-yank-template*
+        Template applied to each mark. Available placeholders:
+        - {path}: file path relative to the current working directory
+        - {file}: absolute file path
+        - {line}: line number
+        - {annotation}: sticky note text
+        Unknown placeholders are kept as-is.
+        Default: `- @{path}:L{line} - "{annotation}"`
+
+    `template_no_annotation`              *fusen-opt-yank-template_no_annotation*
+        Template used instead when the mark has no annotation.
+        Default: `- @{path}:L{line}`
+
+`toggle_mark`                                               *fusen-opt-toggle_mark*
+    Settings for toggle mark behavior.
+
+    `skip_confirm`                              *fusen-opt-toggle_mark-skip_confirm*
+        Skip confirmation dialog when removing a mark via toggle.
+        Default: false
+
+`enabled`                                                     *fusen-opt-enabled*
+    Whether Fusen plugin is enabled. When disabled, all marks and annotations
+    are hidden and all operations are blocked. Data is kept in memory.
+    Default: true
 
 ==============================================================================
 USAGE                                                           *fusen-usage*
@@ -145,10 +208,9 @@ USAGE                                                           *fusen-usage*
 Basic workflow:
 
 1. Navigate to a line in your code
-2. Press `fm` to toggle a sticky note
-3. Press `me` to add a mark with annotation
-4. Press `mn` or `mp` to navigate between marks
-5. Press `ml` to see all marks in quickfix list
+2. Press `me` to add or edit a sticky note with annotation
+3. Press `mn` or `mp` to navigate between marks
+4. Press `ml` to see all marks in the current project in quickfix list
 
 Git branch awareness:
 When you switch git branches, your sticky notes automatically switch too.
@@ -164,17 +226,23 @@ The plugin supports multiple ways to display annotations:
 ==============================================================================
 COMMANDS                                                     *fusen-commands*
 
-:FusenToggle                                                   *:FusenToggle*
-    Toggle sticky note at current line.
+:FusenAddMark                                                 *:FusenAddMark*
+    Add or edit sticky note with annotation at current line.
 
-:FusenAnnotate                                               *:FusenAnnotate*
-    Add or edit annotation for sticky note at current line.
+:FusenClearMark                                             *:FusenClearMark*
+    Clear sticky note at current line.
+
+:FusenToggleMark                                           *:FusenToggleMark*
+    Toggle sticky note at current line. If a mark exists, remove it
+    (with confirmation by default). If no mark exists, add one with
+    annotation input.
 
 :FusenClearBuffer                                         *:FusenClearBuffer*
     Clear all sticky notes in current buffer.
 
 :FusenClearAll                                               *:FusenClearAll*
-    Clear all sticky notes in project.
+    Clear ALL sticky notes (deletes entire JSON content, including other
+    projects and branches).
 
 :FusenNext                                                       *:FusenNext*
     Jump to next sticky note in buffer.
@@ -183,7 +251,17 @@ COMMANDS                                                     *fusen-commands*
     Jump to previous sticky note in buffer.
 
 :FusenList                                                       *:FusenList*
-    Show all sticky notes in quickfix list.
+    Show all sticky notes in the current project in quickfix list.
+
+:FusenYank [scope]                                               *:FusenYank*
+    Yank marks to the system clipboard (`+` register), formatted with the
+    configured template (see |fusen-opt-yank|). Scope is one of:
+    - `line` (default): mark at the cursor line
+    - `buffer`: marks in the current buffer
+    - `all`: all marks in the project
+
+    Requires a clipboard provider (see |clipboard|). When no provider is
+    available, a warning is shown and nothing is copied.
 
 :FusenRefresh                                                 *:FusenRefresh*
     Refresh display of all sticky notes.
@@ -203,6 +281,16 @@ COMMANDS                                                     *fusen-commands*
 :FusenOpenSaveFile                                       *:FusenOpenSaveFile*
     Open the save file in editor for debugging or manual editing.
 
+:FusenEnable                                                   *:FusenEnable*
+    Enable Fusen plugin. Shows all marks and annotations.
+
+:FusenDisable                                                 *:FusenDisable*
+    Disable Fusen plugin. Hides all marks and annotations while keeping
+    data in memory. All operations are blocked when disabled.
+
+:FusenToggle                                                   *:FusenToggle*
+    Toggle Fusen plugin on/off.
+
 ==============================================================================
 MAPPINGS                                                     *fusen-mappings*
 
@@ -214,11 +302,15 @@ Default mappings:
 `mc`                                                        *fusen-map-clear*
     Clear mark at current line.
 
+`mt`                                                       *fusen-map-toggle*
+    Toggle mark at current line.
+
 `mC`                                                  *fusen-map-clear-buffer*
     Clear all marks in current buffer.
 
 `mD`                                                     *fusen-map-clear-all*
-    Clear all marks in project.
+    Clear ALL marks (deletes entire JSON content, including other
+    projects and branches).
 
 `mn`                                                          *fusen-map-next*
     Jump to next mark.
@@ -227,7 +319,16 @@ Default mappings:
     Jump to previous mark.
 
 `ml`                                                          *fusen-map-list*
-    Show marks in quickfix list.
+    Show marks in the current project in quickfix list.
+
+`my`                                                     *fusen-map-yank-line*
+    Yank mark at cursor line to clipboard.
+
+`mY`                                                   *fusen-map-yank-buffer*
+    Yank marks in current buffer to clipboard.
+
+`mA`                                                      *fusen-map-yank-all*
+    Yank all marks in project to clipboard.
 
 ==============================================================================
 FUNCTIONS                                                   *fusen-functions*
@@ -235,17 +336,23 @@ FUNCTIONS                                                   *fusen-functions*
 require("fusen").setup({opts})                               *fusen.setup()*
     Initialize fusen with configuration options.
 
-require("fusen").toggle_mark()                          *fusen.toggle_mark()*
-    Toggle sticky note at current line.
+require("fusen").add_mark()                              *fusen.add_mark()*
+    Add or edit sticky note with annotation at current line.
 
-require("fusen").add_annotation()                    *fusen.add_annotation()*
-    Add or edit annotation for current line.
+require("fusen").clear_mark()                          *fusen.clear_mark()*
+    Clear mark at current line.
+
+require("fusen").toggle_mark()                        *fusen.toggle_mark()*
+    Toggle mark at current line. Adds a mark if none exists, removes
+    it (with confirmation) if one does. Set `toggle_mark.skip_confirm`
+    to skip the confirmation dialog.
 
 require("fusen").clear_buffer()                        *fusen.clear_buffer()*
     Clear all marks in current buffer.
 
 require("fusen").clear_all()                              *fusen.clear_all()*
-    Clear all marks in project.
+    Clear ALL marks (deletes entire JSON content, including other
+    projects and branches).
 
 require("fusen").next_mark()                              *fusen.next_mark()*
     Jump to next mark in buffer.
@@ -254,10 +361,23 @@ require("fusen").prev_mark()                              *fusen.prev_mark()*
     Jump to previous mark in buffer.
 
 require("fusen").list_marks()                            *fusen.list_marks()*
-    Show all marks in quickfix list.
+    Show all marks in the current project in quickfix list.
+
+require("fusen").yank_marks({scope})                      *fusen.yank_marks()*
+    Yank marks to the system clipboard. {scope} is "line" (default),
+    "buffer" or "all". See |:FusenYank|.
 
 require("fusen").refresh_marks()                      *fusen.refresh_marks()*
     Refresh display of all marks.
+
+require("fusen").enable()                                      *fusen.enable()*
+    Enable Fusen plugin.
+
+require("fusen").disable()                                    *fusen.disable()*
+    Disable Fusen plugin.
+
+require("fusen").toggle()                                      *fusen.toggle()*
+    Toggle Fusen plugin on/off.
 
 ==============================================================================
 TELESCOPE                                                   *fusen-telescope*

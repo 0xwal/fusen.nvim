@@ -2,13 +2,22 @@
 
 A sticky notes plugin for Neovim with git branch awareness. Place sticky notes (fusen - 付箋 in Japanese) in your code and keep them organized across different git branches.
 
-![Neovim](https://img.shields.io/badge/Neovim-0.7+-green.svg)
+![Neovim](https://img.shields.io/badge/Neovim-0.8+-green.svg)
 ![Lua](https://img.shields.io/badge/Lua-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
+[![Tests](https://github.com/walkersumida/fusen.nvim/actions/workflows/test.yml/badge.svg)](https://github.com/walkersumida/fusen.nvim/actions/workflows/test.yml)
 
 https://github.com/user-attachments/assets/4ebcb70b-0be8-4668-8a65-2eb5c950aec4
 
 <table>
+  <tr>
+    <th>Handing sticky notes to your AI assistant</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="https://github.com/user-attachments/assets/5b3d005e-8e3d-4121-be9a-18bb6037bde9" />
+    </td>
+  </tr>
   <tr>
     <th>Adding/Editing an annotation</th>
   </tr>
@@ -37,6 +46,7 @@ https://github.com/user-attachments/assets/4ebcb70b-0be8-4668-8a65-2eb5c950aec4
 
 ## ✨ Features
 
+- 🤖 **AI-friendly yank** - Hand all your sticky notes to AI assistants (Claude Code, Copilot CLI, etc.) in one keystroke
 - 📝 **Simple sticky notes** - Clean and minimalist sticky note system
 - 🌳 **Git branch awareness** - Sticky notes are stored per git branch
 - 💾 **Persistent storage** - Your sticky notes are saved between sessions
@@ -44,7 +54,7 @@ https://github.com/user-attachments/assets/4ebcb70b-0be8-4668-8a65-2eb5c950aec4
 - 🎈 **Float window display** - Show annotations in floating windows on cursor hover
 - 🔍 **Telescope integration** - Search and navigate through all your sticky notes
 - ⚡ **Fast navigation** - Jump between sticky notes quickly
-- 📋 **Quickfix list support** - View all sticky notes in a quickfix list
+- 📋 **Quickfix list support** - View all sticky notes in the current project in a quickfix list
 
 ## 📦 Installation
 
@@ -53,6 +63,7 @@ https://github.com/user-attachments/assets/4ebcb70b-0be8-4668-8a65-2eb5c950aec4
 ```lua
 {
   "walkersumida/fusen.nvim",
+  version = "*",
   event = "VimEnter",
   opts = {},
 }
@@ -62,6 +73,7 @@ For custom save file location:
 ```lua
 {
   "walkersumida/fusen.nvim",
+  version = "*",
   event = "VimEnter",
   opts = {
     save_file = vim.fn.expand("$HOME") .. "/my_fusen_marks.json",
@@ -117,11 +129,28 @@ require("fusen").setup()  -- Add options here if needed
     keymaps = {
       add_mark = "me",        -- Add/edit sticky note
       clear_mark = "mc",      -- Clear mark at current line
+      toggle_mark = "mt",     -- Toggle mark at current line
       clear_buffer = "mC",    -- Clear all marks in buffer
       clear_all = "mD",       -- Clear ALL marks (deletes entire JSON content)
       next_mark = "mn",       -- Jump to next mark
       prev_mark = "mp",       -- Jump to previous mark
       list_marks = "ml",      -- Show marks in quickfix
+      yank_line = "my",       -- Yank mark at cursor line to clipboard
+      yank_buffer = "mY",     -- Yank marks in current buffer to clipboard
+      yank_all = "mA",        -- Yank all marks in project to clipboard
+    },
+
+    -- Yank to clipboard settings
+    yank = {
+      -- Template for each mark. Placeholders: {path} {file} {line} {annotation}
+      template = '- @{path}:L{line} - "{annotation}"',
+      -- Used instead when the mark has no annotation
+      template_no_annotation = "- @{path}:L{line}",
+    },
+
+    -- Toggle mark settings
+    toggle_mark = {
+      skip_confirm = false,   -- Skip confirmation when removing mark via toggle
     },
 
     -- Telescope integration settings
@@ -155,6 +184,9 @@ require("fusen").setup()  -- Add options here if needed
       -- "NvimTree",     -- Example: nvim-tree
       -- "nerdtree",     -- Example: NERDTree
     },
+
+    -- Plugin enabled state
+    enabled = true,
   }
 }
 ```
@@ -202,11 +234,15 @@ All default mappings start with `m` prefix for consistency:
 |-----|-------------|
 | `me` | Add or edit sticky note with annotation |
 | `mc` | Clear sticky note at current line |
+| `mt` | Toggle mark at current line (add/remove) |
 | `mC` | Clear all sticky notes in current buffer |
 | `mD` | Clear ALL sticky notes (deletes entire JSON content) |
 | `mn` | Jump to next sticky note |
 | `mp` | Jump to previous sticky note |
-| `ml` | List all sticky notes in quickfix |
+| `ml` | List all sticky notes in current project in quickfix |
+| `my` | Yank sticky note at cursor line to clipboard |
+| `mY` | Yank sticky notes in current buffer to clipboard |
+| `mA` | Yank all sticky notes in project to clipboard |
 
 ### Commands
 
@@ -214,17 +250,65 @@ All default mappings start with `m` prefix for consistency:
 |---------|-------------|
 | `:FusenAddMark` | Add or edit sticky note with annotation |
 | `:FusenClearMark` | Clear sticky note at current line |
+| `:FusenToggleMark` | Toggle mark at current line (add/remove) |
 | `:FusenClearBuffer` | Clear all marks in current buffer |
 | `:FusenClearAll` | Clear ALL marks (deletes entire JSON content) |
 | `:FusenNext` | Jump to next mark |
 | `:FusenPrev` | Jump to previous mark |
-| `:FusenList` | Show all marks in quickfix list |
+| `:FusenList` | Show all marks in current project in quickfix list |
+| `:FusenYank [line\|buffer\|all]` | Yank marks to clipboard (default: `line`) |
 | `:FusenRefresh` | Refresh all marks display |
 | `:FusenSave` | Manually save marks |
 | `:FusenLoad` | Manually load marks |
 | `:FusenInfo` | Show info about mark at current line |
 | `:FusenBranch` | Show current git branch info |
 | `:FusenOpenSaveFile` | Open save file for debugging/editing |
+| `:FusenEnable` | Enable Fusen plugin (show marks and annotations) |
+| `:FusenDisable` | Disable Fusen plugin (hide all marks and annotations) |
+| `:FusenToggle` | Toggle Fusen on/off |
+
+### Yank to Clipboard
+
+Copy your sticky notes to the system clipboard (`+` register) and paste them anywhere — AI chats, issues, code review comments, etc.
+
+> **Note:** This requires a clipboard provider (see `:help clipboard`). macOS works out of the box; on Linux install `xclip`, `xsel` or `wl-clipboard`. Without a provider, a warning is shown and nothing is copied.
+
+```
+:FusenYank          " Mark at cursor line (same as `my`)
+:FusenYank buffer   " Marks in current buffer (same as `mY`)
+:FusenYank all      " All marks in project (same as `mA`)
+```
+
+Each mark is formatted with a customizable template:
+
+```lua
+-- Using lazy.nvim
+{
+  "walkersumida/fusen.nvim",
+  opts = {
+    yank = {
+      template = '- @{path}:L{line} - "{annotation}"',
+      template_no_annotation = "- @{path}:L{line}",
+    },
+  }
+}
+```
+
+Available placeholders:
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{path}` | File path relative to the current working directory |
+| `{file}` | Absolute file path |
+| `{line}` | Line number |
+| `{annotation}` | Sticky note text |
+
+With the default template, the copied text looks like:
+
+```
+- @lua/fusen/init.lua:L42 - "TODO: refactor this function"
+- @lua/fusen/ui.lua:L15 - "This layout breaks on narrow windows"
+```
 
 ### Telescope Integration
 

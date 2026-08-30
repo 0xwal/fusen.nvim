@@ -8,6 +8,16 @@ local git = require("fusen.git")
 
 local initialized = false
 
+-- Helper function to check if Fusen is enabled
+local function check_enabled()
+  local cfg = config.get()
+  if not cfg.enabled then
+    vim.notify("Fusen is currently disabled", vim.log.levels.WARN)
+    return false
+  end
+  return true
+end
+
 -- Helper function for common buffer validation
 local function get_current_buffer_info()
   local bufnr = vim.api.nvim_get_current_buf()
@@ -141,7 +151,34 @@ function M.setup(opts)
   initialized = true
 end
 
+function M.enable()
+  local cfg = config.get()
+  cfg.enabled = true
+  ui.refresh_all_buffers()
+  vim.notify("Fusen enabled", vim.log.levels.INFO)
+end
+
+function M.disable()
+  local cfg = config.get()
+  cfg.enabled = false
+  ui.clear_all_buffers()
+  vim.notify("Fusen disabled", vim.log.levels.INFO)
+end
+
+function M.toggle()
+  local cfg = config.get()
+  if cfg.enabled then
+    M.disable()
+  else
+    M.enable()
+  end
+end
+
 function M.add_mark()
+  if not check_enabled() then
+    return
+  end
+
   local bufnr, file_path, line, err = get_current_buffer_info()
   if err then
     vim.notify(err, vim.log.levels.WARN)
@@ -164,6 +201,10 @@ function M.add_mark()
 end
 
 function M.clear_mark()
+  if not check_enabled() then
+    return
+  end
+
   local bufnr, file_path, line, err = get_current_buffer_info()
   if err then
     vim.notify(err, vim.log.levels.WARN)
@@ -185,7 +226,46 @@ function M.clear_mark()
   end
 end
 
+function M.toggle_mark()
+  if not check_enabled() then
+    return
+  end
+
+  local bufnr, file_path, line, err = get_current_buffer_info()
+  if err then
+    vim.notify(err, vim.log.levels.WARN)
+    return
+  end
+
+  local mark = marks.get_mark(bufnr, line)
+
+  if mark then
+    local cfg = config.get()
+    if not cfg.toggle_mark.skip_confirm then
+      local confirmed = confirm_action(string.format("Delete mark at line %d? (y/N)", line))
+      if not confirmed then
+        return
+      end
+    end
+    marks.remove_mark(bufnr, line)
+    ui.refresh_buffer(bufnr)
+    storage.save()
+    vim.notify("Removed mark", vim.log.levels.INFO)
+  else
+    ui.input_annotation(bufnr, line, function(annotation)
+      marks.add_mark(bufnr, line, annotation)
+      ui.refresh_buffer(bufnr)
+      storage.save()
+      vim.notify("Added mark", vim.log.levels.INFO)
+    end)
+  end
+end
+
 function M.clear_buffer()
+  if not check_enabled() then
+    return
+  end
+
   local bufnr, file_path, line, err = get_current_buffer_info()
   if err then
     return
@@ -201,6 +281,10 @@ function M.clear_buffer()
 end
 
 function M.clear_all()
+  if not check_enabled() then
+    return
+  end
+
   local confirmed = confirm_action("Clear ALL marks in JSON file? This will delete all bookmarks! (y/N)")
   if confirmed then
     marks.clear_all_marks()
@@ -238,6 +322,16 @@ function M.list_marks()
   ui.create_quickfix_list()
 end
 
+-- Copy marks to the system clipboard.
+-- scope: "line" (default, mark at cursor) | "buffer" | "all"
+function M.yank_marks(scope)
+  if not check_enabled() then
+    return
+  end
+
+  require("fusen.yank").yank(scope or "line")
+end
+
 function M.open_save_file()
   local save_file = config.get().save_file
   vim.cmd.edit(save_file)
@@ -272,11 +366,21 @@ local function setup_buffer_keymaps(bufnr)
 
   vim.keymap.set("n", keymaps.add_mark, M.add_mark, opts)
   vim.keymap.set("n", keymaps.clear_mark, M.clear_mark, opts)
+  vim.keymap.set("n", keymaps.toggle_mark, M.toggle_mark, opts)
   vim.keymap.set("n", keymaps.clear_buffer, M.clear_buffer, opts)
   vim.keymap.set("n", keymaps.clear_all, M.clear_all, opts)
   vim.keymap.set("n", keymaps.next_mark, M.next_mark, opts)
   vim.keymap.set("n", keymaps.prev_mark, M.prev_mark, opts)
   vim.keymap.set("n", keymaps.list_marks, M.list_marks, opts)
+  vim.keymap.set("n", keymaps.yank_line, function()
+    M.yank_marks("line")
+  end, opts)
+  vim.keymap.set("n", keymaps.yank_buffer, function()
+    M.yank_marks("buffer")
+  end, opts)
+  vim.keymap.set("n", keymaps.yank_all, function()
+    M.yank_marks("all")
+  end, opts)
 end
 
 function M.setup_keymaps()
@@ -329,6 +433,10 @@ function M.setup_commands()
     M.clear_mark()
   end, {})
 
+  vim.api.nvim_create_user_command("FusenToggleMark", function()
+    M.toggle_mark()
+  end, {})
+
   vim.api.nvim_create_user_command("FusenClearBuffer", function()
     M.clear_buffer()
   end, {})
@@ -348,6 +456,18 @@ function M.setup_commands()
   vim.api.nvim_create_user_command("FusenList", function()
     M.list_marks()
   end, {})
+
+  vim.api.nvim_create_user_command("FusenYank", function(cmd_opts)
+    local scope = vim.trim(cmd_opts.args)
+    M.yank_marks(scope ~= "" and scope or nil)
+  end, {
+    nargs = "?",
+    complete = function(arg_lead)
+      return vim.tbl_filter(function(scope)
+        return vim.startswith(scope, arg_lead)
+      end, require("fusen.yank").scopes)
+    end,
+  })
 
   vim.api.nvim_create_user_command("FusenRefresh", function()
     M.refresh_marks()
@@ -386,6 +506,18 @@ function M.setup_commands()
     else
       vim.notify("Not in a git repository", vim.log.levels.INFO)
     end
+  end, {})
+
+  vim.api.nvim_create_user_command("FusenEnable", function()
+    M.enable()
+  end, {})
+
+  vim.api.nvim_create_user_command("FusenDisable", function()
+    M.disable()
+  end, {})
+
+  vim.api.nvim_create_user_command("FusenToggle", function()
+    M.toggle()
   end, {})
 end
 

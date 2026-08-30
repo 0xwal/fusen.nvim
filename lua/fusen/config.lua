@@ -12,11 +12,26 @@ M.defaults = {
   keymaps = {
     add_mark = "me",
     clear_mark = "mc",
+    toggle_mark = "mt",
     clear_buffer = "mC",
     clear_all = "mD",
     next_mark = "mn",
     prev_mark = "mp",
     list_marks = "ml",
+    yank_line = "my",
+    yank_buffer = "mY",
+    yank_all = "mA",
+  },
+
+  yank = {
+    -- Template for each mark. Placeholders: {path} {file} {line} {annotation}
+    template = '- @{path}:L{line} - "{annotation}"',
+    -- Used instead when the mark has no annotation
+    template_no_annotation = "- @{path}:L{line}",
+  },
+
+  toggle_mark = {
+    skip_confirm = false, -- Skip confirmation when removing mark via toggle
   },
 
   telescope = {
@@ -42,6 +57,8 @@ M.defaults = {
   },
 
   exclude_filetypes = {},
+
+  enabled = true,
 }
 
 M.options = {}
